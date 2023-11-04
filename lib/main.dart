@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 void main() => runApp(MyApp());
 
@@ -73,14 +75,16 @@ class _MyHomePageState extends State<MyHomePage> {
 
       if (response.statusCode == 200) {
         final videoData = response.bodyBytes;
+        final fileName =
+            'downloaded_video_${DateTime.now().millisecondsSinceEpoch}.mp4';
 
         // ビデオファイルを一時的に内部ストレージに保存
         final tempDir = await getApplicationDocumentsDirectory();
-        final tempFile = File('${tempDir.path}/temp_video.mp4');
+        final tempFile = File('${tempDir.path}/$fileName');
         await tempFile.writeAsBytes(videoData);
 
         // ビデオを外部ストレージのダウンロードディレクトリに移動
-        final savedPath = await saveVideo(tempFile);
+        final savedPath = await saveFileToDownloads(videoData, fileName);
 
         print("Video saved to $savedPath");
       } else {
@@ -140,5 +144,41 @@ class _MyHomePageState extends State<MyHomePage> {
     File newFile = await file.copy(fullPath);
 
     return newFile.path;
+  }
+
+  Future<String> saveFileToDownloads(
+      Uint8List fileBytes, String fileName) async {
+    // パーミッションの確認とリクエスト
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.storage,
+      // Android 11 以降は、以下のパーミッションも必要になる場合があります
+      Permission.manageExternalStorage,
+    ].request();
+
+    final isPermissionGranted =
+        statuses[Permission.storage]?.isGranted ?? false;
+    if (!isPermissionGranted) {
+      // パーミッションが得られなかった場合の処理
+      throw Exception('Storage Permission not granted');
+    }
+
+    // ファイルを保存するためのパスを取得します
+    final Directory? downloadsDirectory = await getExternalStorageDirectory();
+    if (downloadsDirectory == null) {
+      // Downloads ディレクトリが取得できない場合の処理
+      throw Exception('Cannot find the downloads directory');
+    }
+
+    // 保存するファイルのパスを作成します
+    final String fullPath = path.join(downloadsDirectory.path, fileName);
+
+    // ファイルを保存します
+    final File file = File(fullPath);
+    await file.writeAsBytes(fileBytes);
+
+    // 確認のためのログ出力
+    print('File saved to: $fullPath');
+
+    return fullPath;
   }
 }
